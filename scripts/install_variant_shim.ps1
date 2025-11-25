@@ -19,8 +19,8 @@ $destDir = Join-Path $env:USERPROFILE '.platformio\packages\framework-arduinoesp
 $dest = Join-Path $destDir 'pins_arduino.h'
 
 if (-not (Test-Path $source)) {
-    Write-Error "Source shim not found: $source"
-    exit 2
+  Write-Error "Source shim not found: $source"
+  exit 2
 }
 
 try {
@@ -32,7 +32,8 @@ try {
   Copy-Item -Path $source -Destination $dest -Force
   Write-Host "Copied variant shim to: $dest"
   exit 0
-} catch {
+}
+catch {
   Write-Error "Failed to copy shim: $($_.Exception.Message)"
   exit 4
 }
