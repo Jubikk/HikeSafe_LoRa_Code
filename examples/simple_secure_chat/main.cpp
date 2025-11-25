@@ -169,7 +169,7 @@ class MyMesh : public BaseChatMesh, ContactVisitor {
 
   void importCard(const char* command) {
     while (*command == ' ') command++;   // skip leading spaces
-    if (memcmp(command, "meshcore://", 11) == 0) {
+    if (memcmp(command, "hikesafe://", 11) == 0) {
       command += 11;  // skip the prefix
       char *ep = strchr(command, 0);  // find end of string
       while (ep > command) {
@@ -355,7 +355,7 @@ public:
   }
 
   void showWelcome() {
-    Serial.println("===== MeshCore Chat Terminal =====");
+    Serial.println("===== HikeSafe Chat Terminal =====");
     Serial.println();
     Serial.printf("WELCOME  %s\n", _prefs.node_name);
     mesh::Utils::printHex(Serial, self_id.pub_key, PUB_KEY_SIZE);
@@ -463,8 +463,8 @@ public:
         releasePacket(pkt);  // undo the obtainNewPacket()
 
         mesh::Utils::toHex(hex_buf, tmp_buf, len);
-        Serial.println("Your MeshCore biz card:");
-        Serial.print("meshcore://"); Serial.println(hex_buf);
+        Serial.println("Your HikeSafe biz card:");
+        Serial.print("hikesafe://"); Serial.println(hex_buf);
         Serial.println();
       } else {
         Serial.println("  Error");
