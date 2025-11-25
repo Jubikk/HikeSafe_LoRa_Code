@@ -1,0 +1,37 @@
+Processing lilygo-lora32-v2_1 (extends: esp32_base; board: ttgo-lora32-v2; platform: platformio/espressif32@6.11.0; framework: arduino; monitor_speed: 115200; build_flags: -w -DNDEBUG -DRADIOLIB_STATIC_ONLY=1 -DRADIOLIB_GODMODE=1, -D LORA_FREQ=915.0, -D LORA_BW=250, -D LORA_SF=10, -D ENABLE_PRIVATE_KEY_IMPORT=1, -D ENABLE_PRIVATE_KEY_EXPORT=1, -D RADIOLIB_EXCLUDE_CC1101=1, -D RADIOLIB_EXCLUDE_RF69=1, -D RADIOLIB_EXCLUDE_SX1231=1, -D RADIOLIB_EXCLUDE_SI443X=1, -D RADIOLIB_EXCLUDE_RFM2X=1, -D RADIOLIB_EXCLUDE_SX128X=1, -D RADIOLIB_EXCLUDE_AFSK=1, -D RADIOLIB_EXCLUDE_AX25=1, -D RADIOLIB_EXCLUDE_HELLSCHREIBER=1, -D RADIOLIB_EXCLUDE_MORSE=1, -D RADIOLIB_EXCLUDE_APRS=1, -D RADIOLIB_EXCLUDE_BELL=1, -D RADIOLIB_EXCLUDE_RTTY=1, -D RADIOLIB_EXCLUDE_SSTV=1, -D LORA_FREQ=915.0, -D LORA_SF=10, -D LORA_TX_POWER=20; board_build.partitions: default; monitor_filters: esp32_exception_decoder; extra_scripts: merge-bin.py; build_src_filter: +<*.cpp>, +<helpers/*.cpp>, +<helpers/radiolib/*.cpp>, +<helpers/bridges/BridgeBase.cpp>, +<helpers/ui/MomentaryButton.cpp>; lib_deps: SPI, Wire, jgromes/RadioLib @ ^7.3.0, rweather/Crypto @ ^0.4.0, adafruit/RTClib @ ^2.1.3, melopero/Melopero RV3028 @ ^1.1.0, electroniccats/CayenneLPP @ 1.6.1)
+--------------------------------------------------------------------------------
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/ttgo-lora32-v2.html
+PLATFORM: Espressif 32 (6.11.0) > TTGO LoRa32-OLED V2
+HARDWARE: ESP32 240MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 1.40501.0 (4.5.1) 
+ - toolchain-xtensa-esp32 @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 42 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- SPI @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\SPI)
+|-- Wire @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\Wire)
+|-- RadioLib @ 7.4.0 (License: MIT, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\RadioLib)
+|   |-- SPI @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\SPI)
+|-- Crypto @ 0.4.0 (License: Unknown, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\Crypto)
+|-- RTClib @ 2.1.4 (License: Unknown, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\RTClib)
+|   |-- Adafruit BusIO @ 1.17.4 (License: Unknown, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\Adafruit BusIO)
+|   |   |-- Wire @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\Wire)
+|   |   |-- SPI @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\SPI)
+|   |-- Wire @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\Wire)
+|-- Melopero RV3028 @ 1.2.0 (License: Unknown, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\Melopero RV3028)
+|   |-- Wire @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\Wire)
+|-- CayenneLPP @ 1.6.1 (License: MIT, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\CayenneLPP)
+|   |-- ArduinoJson @ 7.4.2 (License: Unknown, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\.pio\libdeps\lilygo-lora32-v2_1\ArduinoJson)
+|-- ed25519 (License: Unknown, Path: C:\Users\B1kjuu\Desktop\HikeSafe_Meshcore\HikeSafe_LoRa_Code\lib\ed25519)
+|-- SPIFFS @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\SPIFFS)
+|   |-- FS @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\FS)
+|-- WiFi @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\WiFi)
+|-- FS @ 2.0.0 (License: Unknown, Path: C:\Users\B1kjuu\.platformio\packages\framework-arduinoespressif32\libraries\FS)
+Building in release mode
+*** [.pio\build\lilygo-lora32-v2_1\partitions.bin] Source `default' not found, needed by target `.pio\build\lilygo-lora32-v2_1\partitions.bin'.
+========================== [FAILED] Took 4.12 seconds ==========================
