@@ -14,12 +14,16 @@ void SerialBLEInterface::begin(const char* device_name, uint32_t pin_code) {
 
   // Create the BLE Device
   BLEDevice::init(device_name);
-  BLEDevice::setSecurityCallbacks(this);
   BLEDevice::setMTU(MAX_FRAME_SIZE);
 
-  BLESecurity  sec;
-  sec.setStaticPIN(pin_code);
-  sec.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+  // Only enable BLE security/pairing if a non-zero PIN is provided.
+  // If PIN is 0 we leave the device open for connections without pairing.
+  if (pin_code != 0) {
+    BLEDevice::setSecurityCallbacks(this);
+    BLESecurity  sec;
+    sec.setStaticPIN(pin_code);
+    sec.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+  }
 
   //BLEDevice::setPower(ESP_PWR_LVL_N8);
 

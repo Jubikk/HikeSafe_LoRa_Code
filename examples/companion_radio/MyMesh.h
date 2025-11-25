@@ -203,6 +203,10 @@ private:
   uint8_t out_frame[MAX_FRAME_SIZE + 1];
   CayenneLPP telemetry;
 
+  // Lobby/auth state: stored lobby id and whether client has joined this session
+  char _lobby_id[33];
+  bool _joined_lobby;
+
   struct Frame {
     uint8_t len;
     uint8_t buf[MAX_FRAME_SIZE];

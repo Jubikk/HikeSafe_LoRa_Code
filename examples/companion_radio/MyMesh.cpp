@@ -47,6 +47,11 @@
 #define CMD_GET_ADVERT_PATH           42
 #define CMD_GET_TUNING_PARAMS         43
 // NOTE: CMD range 44..49 parked, potentially for WiFi operations
+#define CMD_SET_PROFILE               44
+#define CMD_GET_PROFILE               45
+#define CMD_CREATE_LOBBY              46
+#define CMD_JOIN_LOBBY                47
+#define CMD_SET_DEVICE_GPS           48
 #define CMD_SEND_BINARY_REQ           50
 #define CMD_FACTORY_RESET             51
 #define CMD_SEND_PATH_DISCOVERY_REQ   52
@@ -77,6 +82,7 @@
 #define RESP_CODE_CUSTOM_VARS         21
 #define RESP_CODE_ADVERT_PATH         22
 #define RESP_CODE_TUNING_PARAMS       23
+#define RESP_CODE_PROFILE             24
 
 #define SEND_TIMEOUT_BASE_MILLIS        500
 #define FLOOD_SEND_TIMEOUT_FACTOR       16.0f
@@ -727,6 +733,10 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
+
+  // lobby defaults
+  _lobby_id[0] = 0;
+  _joined_lobby = false;
 }
 
 void MyMesh::begin(bool has_display) {
@@ -787,6 +797,20 @@ void MyMesh::begin(bool has_display) {
   _store->loadContacts(this);
   addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure Andy's public channel
   _store->loadChannels(this);
+
+  // load persisted lobby id if present
+  {
+    const uint8_t key[] = {'l','o','b','b','y'}; // 5-byte key
+    uint8_t buf[33];
+    uint8_t rlen = getBlobByKey(key, sizeof(key), buf);
+    if (rlen > 0 && rlen < sizeof(_lobby_id)) {
+      memcpy(_lobby_id, buf, rlen);
+      _lobby_id[rlen] = 0;
+    } else {
+      _lobby_id[0] = 0;
+    }
+    _joined_lobby = false; // require app to join each session
+  }
 
   radio_set_params(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
   radio_set_tx_power(_prefs.tx_power_dbm);
@@ -869,6 +893,11 @@ void MyMesh::handleCmdFrame(size_t len) {
     i += tlen;
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_SEND_TXT_MSG && len >= 14) {
+    // require lobby join if a lobby id is configured
+    if (_lobby_id[0] != 0 && !_joined_lobby) {
+      writeErrFrame(ERR_CODE_BAD_STATE);
+      return;
+    }
     int i = 1;
     uint8_t txt_type = cmd_frame[i++];
     uint8_t attempt = cmd_frame[i++];
@@ -914,6 +943,11 @@ void MyMesh::handleCmdFrame(size_t len) {
                         : ERR_CODE_UNSUPPORTED_CMD); // unknown recipient, or unsuported TXT_TYPE_*
     }
   } else if (cmd_frame[0] == CMD_SEND_CHANNEL_TXT_MSG) { // send GroupChannel msg
+    // require lobby join if a lobby id is configured
+    if (_lobby_id[0] != 0 && !_joined_lobby) {
+      writeErrFrame(ERR_CODE_BAD_STATE);
+      return;
+    }
     int i = 1;
     uint8_t txt_type = cmd_frame[i++]; // should be TXT_TYPE_PLAIN
     uint8_t channel_idx = cmd_frame[i++];
@@ -975,6 +1009,178 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG); // invalid geo coordinate
+    }
+  } else if (cmd_frame[0] == CMD_SET_PROFILE) {
+    // Store an app profile blob. Payload is opaque to application; store under key "profile"
+    const uint8_t key[] = {'p','r','o','f','i','l','e'}; // 7-byte key prefix
+    if (len <= 1) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    } else {
+      // store payload after the command byte
+      if (putBlobByKey(key, sizeof(key), &cmd_frame[1], len - 1)) {
+        writeOKFrame();
+      } else {
+        writeErrFrame(ERR_CODE_FILE_IO_ERROR);
+      }
+    }
+  } else if (cmd_frame[0] == CMD_GET_PROFILE) {
+    const uint8_t key[] = {'p','r','o','f','i','l','e'};
+    uint8_t buf[255];
+    uint8_t rlen = getBlobByKey(key, sizeof(key), buf);
+    if (rlen > 0) {
+      out_frame[0] = RESP_CODE_PROFILE;
+      memcpy(&out_frame[1], buf, rlen);
+      _serial->writeFrame(out_frame, rlen + 1);
+    } else {
+      writeErrFrame(ERR_CODE_NOT_FOUND);
+    }
+  } else if (cmd_frame[0] == CMD_CREATE_LOBBY) {
+    // Payload: [name_len(1)][name..][optional psk_base64 (rest, null-terminated or raw)]
+    int i = 1;
+    if (len < 2) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    } else {
+      uint8_t name_len = cmd_frame[i++];
+      if (name_len > 32) name_len = 32;
+      char name[33];
+      memset(name, 0, sizeof(name));
+      if (i + name_len <= (int)len) {
+        memcpy(name, &cmd_frame[i], name_len);
+      }
+      i += name_len;
+      const char *psk_base64 = PUBLIC_GROUP_PSK;
+      char pskbuf[96];
+      // Optional fields: [psk_len(1)][psk_bytes...][lobby_len(1)][lobby_bytes...]
+      if (i < (int)len) {
+        int psk_len = cmd_frame[i++];
+        if (psk_len > 0 && i + psk_len <= (int)len) {
+          int plen = psk_len;
+          if (plen > (int)sizeof(pskbuf)-1) plen = sizeof(pskbuf)-1;
+          memcpy(pskbuf, &cmd_frame[i], plen);
+          pskbuf[plen] = 0;
+          psk_base64 = pskbuf;
+          i += psk_len;
+        }
+      }
+      ChannelDetails *ch = addChannel(name, psk_base64);
+      if (ch == NULL) {
+        writeErrFrame(ERR_CODE_TABLE_FULL);
+      } else {
+        // find index and reply with channel info (same shape as CMD_GET_CHANNEL)
+        int idx = findChannelIdx(ch->channel);
+        if (idx < 0) {
+          writeErrFrame(ERR_CODE_FILE_IO_ERROR);
+        } else {
+          // After channel saved, optionally parse lobby id length+bytes
+          if (i < (int)len) {
+            int lobby_len = cmd_frame[i++];
+            if (lobby_len > 0 && i + lobby_len <= (int)len) {
+              if (lobby_len > 32) lobby_len = 32;
+              const uint8_t key[] = {'l','o','b','b','y'};
+              if (putBlobByKey(key, sizeof(key), &cmd_frame[i], lobby_len)) {
+                memcpy(_lobby_id, &cmd_frame[i], lobby_len);
+                _lobby_id[lobby_len] = 0;
+                _joined_lobby = true; // creator auto-joins
+              }
+            }
+          }
+          int j = 0;
+          out_frame[j++] = RESP_CODE_CHANNEL_INFO;
+          out_frame[j++] = (uint8_t)idx;
+          strcpy((char *)&out_frame[j], ch->name);
+          j += 32;
+          memcpy(&out_frame[j], ch->channel.secret, 16);
+          j += 16;
+          _serial->writeFrame(out_frame, j);
+        }
+      }
+    }
+  } else if (cmd_frame[0] == CMD_JOIN_LOBBY) {
+    // Payload: [channel_idx(1)][optional 16-byte secret starting at byte 2]
+    if (len < 2) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    } else {
+      uint8_t channel_idx = cmd_frame[1];
+      if (channel_idx == 0xFE) {
+        // join by lobby id: payload is [0xFE][lobby_bytes...]
+        int i = 2;
+        int lobby_len = len - i;
+        if (lobby_len <= 0) { writeErrFrame(ERR_CODE_ILLEGAL_ARG); }
+        else {
+          const uint8_t key[] = {'l','o','b','b','y'};
+          uint8_t buf[33];
+          uint8_t rlen = getBlobByKey(key, sizeof(key), buf);
+          if (rlen == 0) { writeErrFrame(ERR_CODE_NOT_FOUND); }
+          else if (rlen == (uint8_t)lobby_len && memcmp(buf, &cmd_frame[i], rlen) == 0) {
+            // successful join
+            memcpy(_lobby_id, buf, rlen);
+            _lobby_id[rlen] = 0;
+            _joined_lobby = true;
+            writeOKFrame();
+          } else {
+            writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+          }
+        }
+      } else if (channel_idx == 0xFF) {
+        // special: add new channel, expecting [0xFF][name_len][name..][16-byte secret]
+        int i = 2;
+        if (i >= (int)len) { writeErrFrame(ERR_CODE_ILLEGAL_ARG); }
+        uint8_t name_len = cmd_frame[i++];
+        if (name_len > 32) name_len = 32;
+        char name[33]; memset(name,0,sizeof(name));
+        if (i + name_len <= (int)len) memcpy(name, &cmd_frame[i], name_len);
+        i += name_len;
+        if (i + 16 <= (int)len) {
+          ChannelDetails ch;
+          memset(&ch, 0, sizeof(ch));
+          StrHelper::strncpy(ch.name, name, 32);
+          memcpy(ch.channel.secret, &cmd_frame[i], 16);
+          ChannelDetails *r = addChannel(ch.name, "");
+          if (!r) { writeErrFrame(ERR_CODE_TABLE_FULL); }
+          else {
+            // store secret
+            setChannel(findChannelIdx(r->channel), ch);
+            saveChannels();
+            writeOKFrame();
+          }
+        } else {
+          writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+        }
+      } else {
+        ChannelDetails ch;
+        if (len >= 2 + 16) {
+          // replace secret for index
+          memset(&ch, 0, sizeof(ch));
+          // leave name unchanged if possible
+          if (!getChannel(channel_idx, ch)) {
+            // no existing channel at index
+            writeErrFrame(ERR_CODE_NOT_FOUND);
+          } else {
+            // overwrite secret bytes
+            memcpy(ch.channel.secret, &cmd_frame[2], 16);
+            if (setChannel(channel_idx, ch)) {
+              saveChannels();
+              writeOKFrame();
+            } else {
+              writeErrFrame(ERR_CODE_NOT_FOUND);
+            }
+          }
+        } else {
+          writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+        }
+      }
+    }
+  } else if (cmd_frame[0] == CMD_SET_DEVICE_GPS && len >= 9) {
+    int32_t lat, lon;
+    memcpy(&lat, &cmd_frame[1], 4);
+    memcpy(&lon, &cmd_frame[5], 4);
+    if (lat <= 90 * 1E6 && lat >= -90 * 1E6 && lon <= 180 * 1E6 && lon >= -180 * 1E6) {
+      sensors.node_lat = ((double)lat) / 1000000.0;
+      sensors.node_lon = ((double)lon) / 1000000.0;
+      savePrefs();
+      writeOKFrame();
+    } else {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }
   } else if (cmd_frame[0] == CMD_GET_DEVICE_TIME) {
     uint8_t reply[5];

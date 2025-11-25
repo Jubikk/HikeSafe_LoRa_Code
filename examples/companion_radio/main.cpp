@@ -41,7 +41,7 @@ static uint32_t _atoi(const char* sp) {
     #ifndef TCP_PORT
       #define TCP_PORT 5000
     #endif
-  #elif defined(BLE_PIN_CODE)
+  #elif defined(BLE_ENABLED)
     #include <helpers/esp32/SerialBLEInterface.h>
     SerialBLEInterface serial_interface;
   #elif defined(SERIAL_RX)
@@ -70,14 +70,14 @@ static uint32_t _atoi(const char* sp) {
     #include <helpers/ArduinoSerialInterface.h>
     ArduinoSerialInterface serial_interface;
   #endif
-#elif defined(NRF52_PLATFORM)
-  #ifdef BLE_PIN_CODE
-    #include <helpers/nrf52/SerialBLEInterface.h>
-    SerialBLEInterface serial_interface;
-  #else
-    #include <helpers/ArduinoSerialInterface.h>
-    ArduinoSerialInterface serial_interface;
-  #endif
+  #elif defined(NRF52_PLATFORM)
+    #ifdef BLE_ENABLED
+      #include <helpers/nrf52/SerialBLEInterface.h>
+      SerialBLEInterface serial_interface;
+    #else
+      #include <helpers/ArduinoSerialInterface.h>
+      ArduinoSerialInterface serial_interface;
+    #endif
 #elif defined(STM32_PLATFORM)
   #include <helpers/ArduinoSerialInterface.h>
   ArduinoSerialInterface serial_interface;
@@ -150,7 +150,7 @@ void setup() {
     #endif
   );
 
-#ifdef BLE_PIN_CODE
+#ifdef BLE_ENABLED
   char dev_name[32+16];
   sprintf(dev_name, "%s%s", BLE_NAME_PREFIX, the_mesh.getNodeName());
   serial_interface.begin(dev_name, the_mesh.getBLEPin());
@@ -198,7 +198,7 @@ void setup() {
 #ifdef WIFI_SSID
   WiFi.begin(WIFI_SSID, WIFI_PWD);
   serial_interface.begin(TCP_PORT);
-#elif defined(BLE_PIN_CODE)
+#elif defined(BLE_ENABLED)
   char dev_name[32+16];
   sprintf(dev_name, "%s%s", BLE_NAME_PREFIX, the_mesh.getNodeName());
   serial_interface.begin(dev_name, the_mesh.getBLEPin());

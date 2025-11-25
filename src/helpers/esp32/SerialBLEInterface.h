@@ -61,7 +61,7 @@ public:
     send_queue_len = recv_queue_len = 0;
   }
 
-  void begin(const char* device_name, uint32_t pin_code);
+  void begin(const char* device_name, uint32_t pin_code = 0);
 
   // BaseSerialInterface methods
   void enable() override;
