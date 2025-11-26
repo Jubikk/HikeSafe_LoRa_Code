@@ -149,6 +149,9 @@ static RAK12500LocationProvider RAK12500_provider;
 #endif
 
 bool EnvironmentSensorManager::begin() {
+  // HikeSafe: disable all environment sensors and GPS for T-LoRa boards
+  // to avoid I2C errors when no sensors are connected.
+  return true;
   #if ENV_INCLUDE_GPS
   #ifdef RAK_WISBLOCK_GPS
   rakGPSInit();   //probe base board/sockets for GPS
@@ -679,6 +682,9 @@ void EnvironmentSensorManager::stop_gps() {
 }
 
 void EnvironmentSensorManager::loop() {
+  // HikeSafe: sensors/GPS disabled, nothing to do here.
+  return;
+
   static long next_gps_update = 0;
 
   #if ENV_INCLUDE_GPS

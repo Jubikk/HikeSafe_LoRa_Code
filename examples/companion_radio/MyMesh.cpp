@@ -52,6 +52,7 @@
 #define CMD_CREATE_LOBBY                  46
 #define CMD_JOIN_LOBBY                    47
 #define CMD_SET_DEVICE_GPS                48
+#define CMD_GET_DISCOVERED_LOBBIES        49  // Get lobbies discovered over LoRa
 #define CMD_SEND_BINARY_REQ               50
 #define CMD_FACTORY_RESET                 51
 #define CMD_SEND_PATH_DISCOVERY_REQ       52
@@ -83,6 +84,7 @@
 #define RESP_CODE_ADVERT_PATH             22
 #define RESP_CODE_TUNING_PARAMS           23
 #define RESP_CODE_PROFILE                 24
+#define RESP_CODE_DISCOVERED_LOBBY        25  // Response with discovered lobby info
 
 #define SEND_TIMEOUT_BASE_MILLIS          500
 #define FLOOD_SEND_TIMEOUT_FACTOR         16.0f
@@ -369,6 +371,10 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   i += tlen;
   addToOfflineQueue(out_frame, i);
 
+  // Explicit debug print to show a channel/contact message was queued
+  MESH_DEBUG_PRINTLN("RX QUEUED: code=%d len=%d snr=%d rssi=%d", out_frame[0], i,
+                     (int)(pkt->getSNR() * 4), (int)_radio->getLastRSSI());
+
   if (_serial->isConnected()) {
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
@@ -439,6 +445,10 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
 
 void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
                                   const char *text) {
+  // Note: channel messages may include discovery payloads, but all messages
+  // are forwarded to the app as channel messages. Specialized discovery
+  // handling was removed to keep memory usage low.
+  
   int i = 0;
   if (app_target_ver >= 3) {
     out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
@@ -464,10 +474,14 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   i += tlen;
   addToOfflineQueue(out_frame, i);
 
+  // Explicit debug print to show a channel message was received and queued
+  MESH_DEBUG_PRINTLN("CHANNEL RX: channel_idx=%d len=%d snr=%d rssi=%d", channel_idx, i,
+                     (int)(pkt->getSNR() * 4), (int)_radio->getLastRSSI());
   if (_serial->isConnected()) {
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrame(frame, 1);
+    MESH_DEBUG_PRINTLN("PUSH TICKLE SENT (0x83) to app");
   } else {
 #ifdef DISPLAY_CLASS
     if (_ui) _ui->notify(UIEventType::channelMessage);
@@ -1086,6 +1100,17 @@ void MyMesh::handleCmdFrame(size_t len) {
                 memcpy(_lobby_id, &cmd_frame[i], lobby_len);
                 _lobby_id[lobby_len] = 0;
                 _joined_lobby = true; // creator auto-joins
+                
+                // Update BLE advertisement to include lobby ID for discovery
+                _serial->setAdvertisementLobbyId(_lobby_id);
+                  // Broadcast a short lobby announcement over the channel we just created.
+                  // This floods a small text message so nearby nodes (and repeaters)
+                  // can hear the lobby exists without needing additional storage.
+                  uint32_t announce_ts = getRTCClock()->getCurrentTime();
+                  char announce_msg[48];
+                  snprintf(announce_msg, sizeof(announce_msg), "LOBBY:%s|%s", _lobby_id, _prefs.node_name);
+                  // sendGroupMessage will flood the message on the channel
+                  sendGroupMessage(announce_ts, ch->channel, _prefs.node_name, announce_msg, strlen(announce_msg));
               }
             }
           }
@@ -1145,14 +1170,33 @@ void MyMesh::handleCmdFrame(size_t len) {
           memset(&ch, 0, sizeof(ch));
           StrHelper::strncpy(ch.name, name, 32);
           memcpy(ch.channel.secret, &cmd_frame[i], 16);
-          ChannelDetails *r = addChannel(ch.name, "");
+          ChannelDetails *r = addChannel(ch.name, PUBLIC_GROUP_PSK);
           if (!r) {
             writeErrFrame(ERR_CODE_TABLE_FULL);
           } else {
-            // store secret
-            setChannel(findChannelIdx(r->channel), ch);
-            saveChannels();
-            writeOKFrame();
+            // Find the index BEFORE modifying the channel via setChannel
+            int idx = findChannelIdx(r->channel);
+            if (idx < 0) {
+              writeErrFrame(ERR_CODE_FILE_IO_ERROR);
+            } else {
+              // store secret with the real 16-byte key from app
+              setChannel(idx, ch);
+              saveChannels();
+              // Respond with channel info so the app can learn the channel index
+              // Format: [RESP_CODE_CHANNEL_INFO][channel_idx(1)][name(32)][secret(16)]
+              uint8_t out_frame[1 + 1 + 32 + 16];
+              int j = 0;
+              out_frame[j++] = RESP_CODE_CHANNEL_INFO;
+              out_frame[j++] = (uint8_t)idx;
+              // copy name (pad/truncate to 32)
+              memset(&out_frame[j], 0, 32);
+              strncpy((char *)&out_frame[j], ch.name, 32);
+              j += 32;
+              // copy 16-byte secret
+              memcpy(&out_frame[j], ch.channel.secret, 16);
+              j += 16;
+              _serial->writeFrame(out_frame, j);
+            }
           }
         } else {
           writeErrFrame(ERR_CODE_ILLEGAL_ARG);

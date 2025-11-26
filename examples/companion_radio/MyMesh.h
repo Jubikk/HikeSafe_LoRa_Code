@@ -57,11 +57,11 @@
 #endif
 
 #ifndef MAX_CONTACTS
-#define MAX_CONTACTS 100
+#define MAX_CONTACTS 80
 #endif
 
 #ifndef OFFLINE_QUEUE_SIZE
-#define OFFLINE_QUEUE_SIZE 16
+#define OFFLINE_QUEUE_SIZE 8
 #endif
 
 #ifndef BLE_NAME_PREFIX
@@ -232,11 +232,11 @@ private:
     uint32_t ack;
     ContactInfo *contact;
   };
-#define EXPECTED_ACK_TABLE_SIZE 8
+#define EXPECTED_ACK_TABLE_SIZE 4
   AckTableEntry expected_ack_table[EXPECTED_ACK_TABLE_SIZE]; // circular table
   int next_ack_idx;
 
-#define ADVERT_PATH_TABLE_SIZE 16
+#define ADVERT_PATH_TABLE_SIZE 8
   AdvertPath advert_paths[ADVERT_PATH_TABLE_SIZE]; // circular table
 };
 

@@ -27,7 +27,7 @@ class SerialBLEInterface : public BaseSerialInterface,
     uint8_t buf[MAX_FRAME_SIZE];
   };
 
-#define FRAME_QUEUE_SIZE 4
+#define FRAME_QUEUE_SIZE 6
   int recv_queue_len;
   Frame recv_queue[FRAME_QUEUE_SIZE];
   int send_queue_len;
@@ -80,6 +80,10 @@ public:
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
+  
+  // Update BLE advertisement with lobby info for discovery
+  void setAdvertisementLobbyId(const char* lobbyId);
+  void clearAdvertisementLobbyId();
 };
 
 #if BLE_DEBUG_LOGGING && ARDUINO

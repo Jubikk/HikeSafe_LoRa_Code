@@ -37,12 +37,23 @@ void SerialBLEInterface::begin(const char *device_name, uint32_t pin_code) {
   // Create a BLE Characteristic
   pTxCharacteristic = pService->createCharacteristic(
       CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  pTxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM);
-  pTxCharacteristic->addDescriptor(new BLE2902());
-
+  
+  // RX characteristic supports both write with response and write without response
   BLECharacteristic *pRxCharacteristic =
-      pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
-  pRxCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE_ENC_MITM);
+      pService->createCharacteristic(CHARACTERISTIC_UUID_RX, 
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  
+  // Set permissions based on whether security is enabled
+  if (pin_code != 0) {
+    pTxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ_ENC_MITM);
+    pRxCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE_ENC_MITM);
+  } else {
+    // No encryption required - open access
+    pTxCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ);
+    pRxCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE);
+  }
+  
+  pTxCharacteristic->addDescriptor(new BLE2902());
   pRxCharacteristic->setCallbacks(this);
 
   pServer->getAdvertising()->addServiceUUID(SERVICE_UUID);
@@ -84,14 +95,27 @@ void SerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) {
 
 // -------- BLEServerCallbacks methods
 
-void SerialBLEInterface::onConnect(BLEServer *pServer) {}
+void SerialBLEInterface::onConnect(BLEServer *pServer) {
+  // When no PIN/security is enabled, set deviceConnected here since
+  // onAuthenticationComplete won't be called
+  if (_pin_code == 0) {
+    deviceConnected = true;
+    BLE_DEBUG_PRINTLN("onConnect() - no PIN, setting deviceConnected = true");
+  }
+}
 
 void SerialBLEInterface::onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param) {
   BLE_DEBUG_PRINTLN("onConnect(), conn_id=%d, mtu=%d", param->connect.conn_id,
                     pServer->getPeerMTU(param->connect.conn_id));
   last_conn_id = param->connect.conn_id;
+  
+  // When no PIN/security is enabled, set deviceConnected here since
+  // onAuthenticationComplete won't be called  
+  if (_pin_code == 0) {
+    deviceConnected = true;
+    BLE_DEBUG_PRINTLN("onConnect() - no PIN, setting deviceConnected = true");
+  }
 }
-
 void SerialBLEInterface::onMtuChanged(BLEServer *pServer, esp_ble_gatts_cb_param_t *param) {
   BLE_DEBUG_PRINTLN("onMtuChanged(), mtu=%d", pServer->getPeerMTU(param->mtu.conn_id));
 }
@@ -113,9 +137,18 @@ void SerialBLEInterface::onWrite(BLECharacteristic *pCharacteristic, esp_ble_gat
 
   if (len > MAX_FRAME_SIZE) {
     BLE_DEBUG_PRINTLN("ERROR: onWrite(), frame too big, len=%d", len);
-  } else if (recv_queue_len >= FRAME_QUEUE_SIZE) {
-    BLE_DEBUG_PRINTLN("ERROR: onWrite(), recv_queue is full!");
   } else {
+    // If the recv queue is full, drop the oldest entry to make room for the new
+    // incoming write. This favors newer frames (the app's latest commands)
+    // over older ones when bursts occur.
+    if (recv_queue_len >= FRAME_QUEUE_SIZE) {
+      BLE_DEBUG_PRINTLN("WARN: onWrite(), recv_queue full - dropping oldest frame to make room");
+      // shift left by one
+      for (int i = 0; i < recv_queue_len - 1; i++) {
+        recv_queue[i] = recv_queue[i + 1];
+      }
+      recv_queue_len--;
+    }
     recv_queue[recv_queue_len].len = len;
     memcpy(recv_queue[recv_queue_len].buf, rxValue, len);
     recv_queue_len++;
@@ -170,7 +203,16 @@ size_t SerialBLEInterface::writeFrame(const uint8_t src[], size_t len) {
     memcpy(send_queue[send_queue_len].buf, src, len);
     send_queue_len++;
 
+    // Debug: log that we've enqueued a notify frame for the app
+    BLE_DEBUG_PRINTLN("ENQUEUE_NOTIFY: len=%d hdr=0x%02x send_queue_len=%d", (uint32_t)len,
+                      (uint32_t)src[0], (uint32_t)send_queue_len);
+
     return len;
+  }
+  // If not connected, log that notify was suppressed so we can correlate
+  if (!deviceConnected) {
+    BLE_DEBUG_PRINTLN("writeFrame(): device not connected - notify suppressed (len=%d hdr=0x%02x)", (uint32_t)len,
+                      (uint32_t)(len>0?src[0]:0));
   }
   return 0;
 }
@@ -200,15 +242,35 @@ size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[]) {
 
   if (recv_queue_len > 0) {         // check recv queue
     size_t len = recv_queue[0].len; // take from top of queue
-    memcpy(dest, recv_queue[0].buf, len);
-
-    BLE_DEBUG_PRINTLN("readBytes: sz=%d, hdr=%d", len, (uint32_t)dest[0]);
+    uint8_t* buf = recv_queue[0].buf;
+    
+    // Parse framing: expect '<' + len_lsb + len_msb + payload
+    // This matches the format sent by the companion app
+    if (len >= 3 && buf[0] == '<') {
+      uint16_t payload_len = buf[1] | (buf[2] << 8);
+      if (payload_len > 0 && 3 + payload_len <= len && payload_len <= MAX_FRAME_SIZE) {
+        memcpy(dest, &buf[3], payload_len);
+        BLE_DEBUG_PRINTLN("readBytes (framed): sz=%d, hdr=%d", payload_len, (uint32_t)dest[0]);
+        
+        recv_queue_len--;
+        for (int i = 0; i < recv_queue_len; i++) {
+          recv_queue[i] = recv_queue[i + 1];
+        }
+        return payload_len;
+      }
+    }
+    
+    // Fallback: treat as raw unframed data (for backwards compatibility)
+    if (len <= MAX_FRAME_SIZE) {
+      memcpy(dest, buf, len);
+      BLE_DEBUG_PRINTLN("readBytes (raw): sz=%d, hdr=%d", len, (uint32_t)dest[0]);
+    }
 
     recv_queue_len--;
     for (int i = 0; i < recv_queue_len; i++) { // delete top item from queue
       recv_queue[i] = recv_queue[i + 1];
     }
-    return len;
+    return len <= MAX_FRAME_SIZE ? len : 0;
   }
 
   if (pServer->getConnectedCount() == 0) deviceConnected = false;
@@ -246,4 +308,52 @@ size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[]) {
 
 bool SerialBLEInterface::isConnected() const {
   return deviceConnected; // pServer != NULL && pServer->getConnectedCount() > 0;
+}
+
+void SerialBLEInterface::setAdvertisementLobbyId(const char* lobbyId) {
+  if (!pServer || !lobbyId) return;
+  
+  BLEAdvertising* pAdvertising = pServer->getAdvertising();
+  
+  // Create manufacturer data with lobby ID
+  // Format: [0xFF, 0xFF] (placeholder company ID) + "L:" + lobbyId
+  // Max BLE advert manufacturer data is ~26 bytes
+  char mfgData[24];
+  int len = snprintf(mfgData + 2, sizeof(mfgData) - 2, "L:%s", lobbyId);
+  mfgData[0] = 0xFF; // Company ID low byte (0xFFFF = reserved for testing)
+  mfgData[1] = 0xFF; // Company ID high byte
+  
+  BLEAdvertisementData advData;
+  advData.setManufacturerData(std::string(mfgData, len + 2));
+  advData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  
+  pAdvertising->setAdvertisementData(advData);
+  
+  // Restart advertising with new data - EVEN while connected
+  // This allows other phones to discover the lobby via BLE scan
+  if (_isEnabled) {
+    pAdvertising->stop();
+    pAdvertising->start();
+  }
+  
+  BLE_DEBUG_PRINTLN("Set advertisement lobby ID: %s", lobbyId);
+}
+
+void SerialBLEInterface::clearAdvertisementLobbyId() {
+  if (!pServer) return;
+  
+  BLEAdvertising* pAdvertising = pServer->getAdvertising();
+  
+  // Reset to default advertisement (just service UUID)
+  BLEAdvertisementData advData;
+  advData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  pAdvertising->setAdvertisementData(advData);
+  
+  // Restart advertising - EVEN while connected
+  if (_isEnabled) {
+    pAdvertising->stop();
+    pAdvertising->start();
+  }
+  
+  BLE_DEBUG_PRINTLN("Cleared advertisement lobby ID");
 }
