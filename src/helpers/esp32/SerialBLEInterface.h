@@ -80,9 +80,9 @@ public:
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
-  
+
   // Update BLE advertisement with lobby info for discovery
-  void setAdvertisementLobbyId(const char* lobbyId);
+  void setAdvertisementLobbyId(const char *lobbyId);
   void clearAdvertisementLobbyId();
 };
 

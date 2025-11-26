@@ -2,11 +2,11 @@
 
 #include <Arduino.h>
 
-#define MAX_FRAME_SIZE  172
+#define MAX_FRAME_SIZE 172
 
 class BaseSerialInterface {
 protected:
-  BaseSerialInterface() { }
+  BaseSerialInterface() {}
 
 public:
   virtual void enable() = 0;
@@ -18,8 +18,8 @@ public:
   virtual bool isWriteBusy() const = 0;
   virtual size_t writeFrame(const uint8_t src[], size_t len) = 0;
   virtual size_t checkRecvFrame(uint8_t dest[]) = 0;
-  
+
   // Advertisement methods for lobby discovery (BLE only, no-op for other interfaces)
-  virtual void setAdvertisementLobbyId(const char* lobbyId) { }
-  virtual void clearAdvertisementLobbyId() { }
+  virtual void setAdvertisementLobbyId(const char *lobbyId) {}
+  virtual void clearAdvertisementLobbyId() {}
 };

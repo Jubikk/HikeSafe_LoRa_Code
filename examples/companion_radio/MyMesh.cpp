@@ -52,7 +52,7 @@
 #define CMD_CREATE_LOBBY                  46
 #define CMD_JOIN_LOBBY                    47
 #define CMD_SET_DEVICE_GPS                48
-#define CMD_GET_DISCOVERED_LOBBIES        49  // Get lobbies discovered over LoRa
+#define CMD_GET_DISCOVERED_LOBBIES        49 // Get lobbies discovered over LoRa
 #define CMD_SEND_BINARY_REQ               50
 #define CMD_FACTORY_RESET                 51
 #define CMD_SEND_PATH_DISCOVERY_REQ       52
@@ -84,7 +84,7 @@
 #define RESP_CODE_ADVERT_PATH             22
 #define RESP_CODE_TUNING_PARAMS           23
 #define RESP_CODE_PROFILE                 24
-#define RESP_CODE_DISCOVERED_LOBBY        25  // Response with discovered lobby info
+#define RESP_CODE_DISCOVERED_LOBBY        25 // Response with discovered lobby info
 
 #define SEND_TIMEOUT_BASE_MILLIS          500
 #define FLOOD_SEND_TIMEOUT_FACTOR         16.0f
@@ -372,8 +372,8 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   addToOfflineQueue(out_frame, i);
 
   // Explicit debug print to show a channel/contact message was queued
-  MESH_DEBUG_PRINTLN("RX QUEUED: code=%d len=%d snr=%d rssi=%d", out_frame[0], i,
-                     (int)(pkt->getSNR() * 4), (int)_radio->getLastRSSI());
+  MESH_DEBUG_PRINTLN("RX QUEUED: code=%d len=%d snr=%d rssi=%d", out_frame[0], i, (int)(pkt->getSNR() * 4),
+                     (int)_radio->getLastRSSI());
 
   if (_serial->isConnected()) {
     uint8_t frame[1];
@@ -448,7 +448,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   // Note: channel messages may include discovery payloads, but all messages
   // are forwarded to the app as channel messages. Specialized discovery
   // handling was removed to keep memory usage low.
-  
+
   int i = 0;
   if (app_target_ver >= 3) {
     out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
@@ -1100,17 +1100,18 @@ void MyMesh::handleCmdFrame(size_t len) {
                 memcpy(_lobby_id, &cmd_frame[i], lobby_len);
                 _lobby_id[lobby_len] = 0;
                 _joined_lobby = true; // creator auto-joins
-                
+
                 // Update BLE advertisement to include lobby ID for discovery
                 _serial->setAdvertisementLobbyId(_lobby_id);
-                  // Broadcast a short lobby announcement over the channel we just created.
-                  // This floods a small text message so nearby nodes (and repeaters)
-                  // can hear the lobby exists without needing additional storage.
-                  uint32_t announce_ts = getRTCClock()->getCurrentTime();
-                  char announce_msg[48];
-                  snprintf(announce_msg, sizeof(announce_msg), "LOBBY:%s|%s", _lobby_id, _prefs.node_name);
-                  // sendGroupMessage will flood the message on the channel
-                  sendGroupMessage(announce_ts, ch->channel, _prefs.node_name, announce_msg, strlen(announce_msg));
+                // Broadcast a short lobby announcement over the channel we just created.
+                // This floods a small text message so nearby nodes (and repeaters)
+                // can hear the lobby exists without needing additional storage.
+                uint32_t announce_ts = getRTCClock()->getCurrentTime();
+                char announce_msg[48];
+                snprintf(announce_msg, sizeof(announce_msg), "LOBBY:%s|%s", _lobby_id, _prefs.node_name);
+                // sendGroupMessage will flood the message on the channel
+                sendGroupMessage(announce_ts, ch->channel, _prefs.node_name, announce_msg,
+                                 strlen(announce_msg));
               }
             }
           }
